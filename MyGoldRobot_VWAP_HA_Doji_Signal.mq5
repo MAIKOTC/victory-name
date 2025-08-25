@@ -37,6 +37,13 @@ input int      InpNewsCloseMinsBefore     = 10;
 input uint     InpMagic                   = 2025082502;
 input bool     InpOnePositionPerSymbol    = true;
 
+// Visuals
+input bool     InpVisualAnnotations       = true;              // Draw entries and SL/TP on chart
+input color    InpBuyColor                = clrLime;           // Buy marker color
+input color    InpSellColor               = clrTomato;         // Sell marker color
+input color    InpSLColor                 = clrOrange;         // SL line color
+input color    InpTPColor                 = clrDeepSkyBlue;    // TP line color
+
 CTrade Trade;
 string g_symbol;
 MqlTick g_tick;
@@ -44,6 +51,43 @@ int g_digits; double g_point; double g_tickValue; double g_tickSize; int g_sprea
 
 datetime g_lastBuySignalBarTime = 0;
 datetime g_lastSellSignalBarTime = 0;
+
+// Debug/visual state
+bool   g_dbgDoji = false;
+bool   g_dbgBuyTrend = false;
+bool   g_dbgSellTrend = false;
+bool   g_dbgHasBearishRun = false;
+bool   g_dbgHasBullishRun = false;
+double g_dbgVWAP = 0.0;
+
+string UniqueId(const string prefix)
+{
+	ulong ms = GetMicrosecondCount();
+	return(prefix + "_" + IntegerToString((long)TimeCurrent()) + "_" + IntegerToString((long)(ms % 1000000)));
+}
+
+void DrawEntryAndLevels(bool is_buy, double price, double sl, double tp)
+{
+	if(!InpVisualAnnotations) return;
+	// Arrow
+	string nameA = UniqueId(is_buy ? "BUY" : "SELL");
+	int arrowType = is_buy ? OBJ_ARROW_UP : OBJ_ARROW_DOWN;
+	ObjectCreate(0, nameA, arrowType, 0, iTime(g_symbol, InpTimeframe, 0), price);
+	ObjectSetInteger(0, nameA, OBJPROP_COLOR, is_buy ? InpBuyColor : InpSellColor);
+	ObjectSetInteger(0, nameA, OBJPROP_WIDTH, 2);
+	// SL line
+	string nameSL = UniqueId("SL");
+	ObjectCreate(0, nameSL, OBJ_HLINE, 0, 0, sl);
+	ObjectSetInteger(0, nameSL, OBJPROP_COLOR, InpSLColor);
+	ObjectSetInteger(0, nameSL, OBJPROP_STYLE, STYLE_DASH);
+	ObjectSetInteger(0, nameSL, OBJPROP_WIDTH, 1);
+	// TP line
+	string nameTP = UniqueId("TP");
+	ObjectCreate(0, nameTP, OBJ_HLINE, 0, 0, tp);
+	ObjectSetInteger(0, nameTP, OBJPROP_COLOR, InpTPColor);
+	ObjectSetInteger(0, nameTP, OBJPROP_STYLE, STYLE_DOT);
+	ObjectSetInteger(0, nameTP, OBJPROP_WIDTH, 1);
+}
 
 bool GetSymbolProps(const string sym)
 {
@@ -274,6 +318,7 @@ void PlaceOrder(bool is_buy, double sl_price, double tp_price, const string comm
 	if(is_buy) ok = Trade.Buy(lot, g_symbol, 0.0, sl_price, tp_price, comment);
 	else ok = Trade.Sell(lot, g_symbol, 0.0, sl_price, tp_price, comment);
 	if(!ok) Print("Order failed: ", _LastError);
+	else DrawEntryAndLevels(is_buy, is_buy ? g_tick.ask : g_tick.bid, sl_price, tp_price);
 }
 
 void ManageOpenPosition()
@@ -336,6 +381,14 @@ void EvaluateAndTrade()
 	bool has_bearish_run = HasConsecutiveWicklessRun(true, InpLookbackMaxBars, ha_o, ha_c, ha_h, ha_l);
 	bool has_bullish_run = HasConsecutiveWicklessRun(false, InpLookbackMaxBars, ha_o, ha_c, ha_h, ha_l);
 
+	// update debug state for on-chart display
+	g_dbgDoji = doji;
+	g_dbgBuyTrend = buy_trend;
+	g_dbgSellTrend = sell_trend;
+	g_dbgHasBearishRun = has_bearish_run;
+	g_dbgHasBullishRun = has_bullish_run;
+	g_dbgVWAP = vwap[0];
+
 	if(doji)
 	{
 		if(buy_trend && has_bearish_run)
@@ -375,6 +428,28 @@ void OnTick()
 	CloseAllPositionsBeforeNews();
 	ManageOpenPosition();
 	EvaluateAndTrade();
+
+	// On-chart status panel
+	if(InpVisualAnnotations)
+	{
+		string label = "EA_STATUS_PANEL";
+		if(!ObjectFind(0, label))
+		{
+			ObjectCreate(0, label, OBJ_LABEL, 0, 0, 0);
+			ObjectSetInteger(0, label, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+			ObjectSetInteger(0, label, OBJPROP_XDISTANCE, 10);
+			ObjectSetInteger(0, label, OBJPROP_YDISTANCE, 20);
+		}
+		string txt;
+		txt = StringFormat("%s M1\nVWAP: %.2f\nDoji: %s\nTrend: %s\nWicklessRun(Bear): %s\nWicklessRun(Bull): %s", 
+			g_symbol, g_dbgVWAP, g_dbgDoji ? "Yes" : "No",
+			g_dbgBuyTrend ? "Buy-only" : (g_dbgSellTrend ? "Sell-only" : "Neutral"),
+			g_dbgHasBearishRun ? "Yes" : "No",
+			g_dbgHasBullishRun ? "Yes" : "No");
+		ObjectSetString(0, label, OBJPROP_TEXT, txt);
+		ObjectSetInteger(0, label, OBJPROP_COLOR, clrWhite);
+		ObjectSetInteger(0, label, OBJPROP_FONTSIZE, 10);
+	}
 }
 
 void OnDeinit(const int reason){}
