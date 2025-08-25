@@ -5,7 +5,6 @@
 #property strict
 
 #include <Trade/Trade.mqh>
-#include <Calendar.mqh>
 
 //============================ Inputs ============================//
 input string   InpSymbol                  = "ETHUSD";          // Trading symbol (broker symbol)
@@ -111,19 +110,7 @@ bool DailyDrawdownExceeded()
 
 bool HasHighImpactNewsWithinMinutes(int minutes_ahead)
 {
-	if(!InpEnableNewsFilter) return(false);
-	// Use MT5 economic calendar if available
-	// Filter for high importance events for the symbol's currency (crypto often lacks calendar data)
-	MqlCalendarValue values[];
-	datetime from_time = TimeCurrent();
-	datetime to_time   = from_time + minutes_ahead * 60;
-	int count = CalendarValueHistory(values, "", from_time, to_time);
-	if(count <= 0) return(false);
-	for(int i=0; i<count; ++i)
-	{
-		if(values[i].importance == CALENDAR_IMPORTANCE_HIGH)
-			return(true);
-	}
+	// Stubbed out for broad terminal compatibility. Enable news filter manually or via custom integration.
 	return(false);
 }
 
