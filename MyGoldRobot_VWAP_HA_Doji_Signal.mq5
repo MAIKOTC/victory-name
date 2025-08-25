@@ -43,6 +43,10 @@ input color    InpBuyColor                = clrLime;           // Buy marker col
 input color    InpSellColor               = clrTomato;         // Sell marker color
 input color    InpSLColor                 = clrOrange;         // SL line color
 input color    InpTPColor                 = clrDeepSkyBlue;    // TP line color
+input bool     InpShowWicklessMarkers     = true;              // Mark wickless HA candles within lookback
+input color    InpWicklessBullColor       = clrGreen;          // Bullish wickless color
+input color    InpWicklessBearColor       = clrRed;            // Bearish wickless color
+input bool     InpShowRRLabel             = true;              // Show RR text near entry
 
 CTrade Trade;
 string g_symbol;
@@ -87,6 +91,53 @@ void DrawEntryAndLevels(bool is_buy, double price, double sl, double tp)
 	ObjectSetInteger(0, nameTP, OBJPROP_COLOR, InpTPColor);
 	ObjectSetInteger(0, nameTP, OBJPROP_STYLE, STYLE_DOT);
 	ObjectSetInteger(0, nameTP, OBJPROP_WIDTH, 1);
+}
+
+void DrawEntryRRLabel(bool is_buy, double entry_price, double sl, double tp)
+{
+	if(!InpVisualAnnotations || !InpShowRRLabel) return;
+	double rr = 0.0;
+	double risk = MathMax(MathAbs(entry_price - sl), 0.0000001);
+	rr = MathAbs(tp - entry_price) / risk;
+	string nameT = UniqueId("RR");
+	ObjectCreate(0, nameT, OBJ_TEXT, 0, iTime(g_symbol, InpTimeframe, 0), entry_price + (is_buy ? risk*0.3 : -risk*0.3));
+	ObjectSetString(0, nameT, OBJPROP_TEXT, StringFormat("RR=%.2f", rr));
+	ObjectSetInteger(0, nameT, OBJPROP_COLOR, is_buy ? InpBuyColor : InpSellColor);
+	ObjectSetInteger(0, nameT, OBJPROP_FONTSIZE, 9);
+}
+
+void DrawWicklessMarkers(const MqlRates &rates[], int bars, const double &ha_open[], const double &ha_close[], const double &ha_high[], const double &ha_low[])
+{
+	if(!InpVisualAnnotations || !InpShowWicklessMarkers) return;
+	int maxk = MathMin(InpLookbackMaxBars, bars-1);
+	for(int k=1; k<=maxk; ++k)
+	{
+		string name;
+		datetime t = rates[k].time;
+		double y = rates[k].close;
+		bool bull = (ha_close[k] > ha_open[k]) && MathAbs(ha_low[k] - MathMin(ha_open[k], ha_close[k])) <= (g_point * 0.1);
+		bool bear = (ha_close[k] < ha_open[k]) && MathAbs(ha_high[k] - MathMax(ha_open[k], ha_close[k])) <= (g_point * 0.1);
+		if(bull)
+		{
+			name = StringFormat("WL_BULL_%I64d", (long long)t);
+			if(ObjectFind(0, name) == -1)
+			{
+				ObjectCreate(0, name, OBJ_ARROW_UP, 0, t, y);
+				ObjectSetInteger(0, name, OBJPROP_COLOR, InpWicklessBullColor);
+				ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+			}
+		}
+		else if(bear)
+		{
+			name = StringFormat("WL_BEAR_%I64d", (long long)t);
+			if(ObjectFind(0, name) == -1)
+			{
+				ObjectCreate(0, name, OBJ_ARROW_DOWN, 0, t, y);
+				ObjectSetInteger(0, name, OBJPROP_COLOR, InpWicklessBearColor);
+				ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+			}
+		}
+	}
 }
 
 bool GetSymbolProps(const string sym)
@@ -318,7 +369,12 @@ void PlaceOrder(bool is_buy, double sl_price, double tp_price, const string comm
 	if(is_buy) ok = Trade.Buy(lot, g_symbol, 0.0, sl_price, tp_price, comment);
 	else ok = Trade.Sell(lot, g_symbol, 0.0, sl_price, tp_price, comment);
 	if(!ok) Print("Order failed: ", _LastError);
-	else DrawEntryAndLevels(is_buy, is_buy ? g_tick.ask : g_tick.bid, sl_price, tp_price);
+	else 
+	{
+		double entry = is_buy ? g_tick.ask : g_tick.bid;
+		DrawEntryAndLevels(is_buy, entry, sl_price, tp_price);
+		DrawEntryRRLabel(is_buy, entry, sl_price, tp_price);
+	}
 }
 
 void ManageOpenPosition()
@@ -388,6 +444,9 @@ void EvaluateAndTrade()
 	g_dbgHasBearishRun = has_bearish_run;
 	g_dbgHasBullishRun = has_bullish_run;
 	g_dbgVWAP = vwap[0];
+
+	// draw wickless markers for lookback window
+	DrawWicklessMarkers(rates, bars, ha_o, ha_c, ha_h, ha_l);
 
 	if(doji)
 	{
