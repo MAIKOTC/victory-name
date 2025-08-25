@@ -79,9 +79,9 @@ bool DailyDrawdownExceeded()
 	{
 		ulong ticket = HistoryDealGetTicket(i);
 		if(ticket == 0) continue;
-		long reason = (long)HistoryDealGetInteger(ticket, DEAL_REASON);
-		if(reason != DEAL_REASON_SL && reason != DEAL_REASON_TP && reason != DEAL_REASON_CLOSE && reason != DEAL_REASON_MARGINCALL && reason != DEAL_REASON_CLIENT)
-			continue;
+		int deal_type = (int)HistoryDealGetInteger(ticket, DEAL_TYPE);
+		if(!(deal_type == DEAL_TYPE_BUY || deal_type == DEAL_TYPE_SELL))
+			continue; // skip non-trade deals
 		datetime t   = (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
 		if(t < day_start) continue;
 		string sym  = HistoryDealGetString(ticket, DEAL_SYMBOL);
