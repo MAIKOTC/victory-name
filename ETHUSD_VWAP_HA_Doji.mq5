@@ -5,6 +5,7 @@
 #property strict
 
 #include <Trade/Trade.mqh>
+#include <Calendar.mqh>
 
 //============================ Inputs ============================//
 input string   InpSymbol                  = "ETHUSD";          // Trading symbol (broker symbol)
@@ -90,8 +91,8 @@ bool DailyDrawdownExceeded()
 	datetime day_start = StructToTime(d);
 	// Compute realized PnL for today
 	double realized = 0.0;
-	ulong total = HistoryDealsTotal();
-	for(ulong i=0; i<total; ++i)
+	int total = (int)HistoryDealsTotal();
+	for(uint i=0; i<(uint)total; ++i)
 	{
 		ulong ticket = HistoryDealGetTicket(i);
 		if(ticket == 0) continue;
@@ -116,7 +117,7 @@ bool HasHighImpactNewsWithinMinutes(int minutes_ahead)
 	MqlCalendarValue values[];
 	datetime from_time = TimeCurrent();
 	datetime to_time   = from_time + minutes_ahead * 60;
-	int count = CalendarValueHistory(values, NULL, from_time, to_time);
+	int count = CalendarValueHistory(values, "", from_time, to_time);
 	if(count <= 0) return(false);
 	for(int i=0; i<count; ++i)
 	{
@@ -139,7 +140,7 @@ void CloseAllPositionsBeforeNews()
 		if(!PositionSelectByTicket(ticket)) continue;
 		string sym = PositionGetString(POSITION_SYMBOL);
 		if(sym != g_symbol) continue;
-		Trade.PositionClose(ticket);
+		Trade.PositionClose(sym);
 	}
 }
 
@@ -162,7 +163,7 @@ bool ComputeATR(string sym, ENUM_TIMEFRAMES tf, int period, int count, double &a
 }
 
 // Heikin Ashi computation (series arrays, index 0 = current)
-bool ComputeHeikinAshi(const MqlRates rates[], int count, double &ha_open[], double &ha_close[], double &ha_high[], double &ha_low[])
+bool ComputeHeikinAshi(const MqlRates &rates[], int count, double &ha_open[], double &ha_close[], double &ha_high[], double &ha_low[])
 {
 	if(count <= 0) return(false);
 	ArraySetAsSeries(ha_open,  true);
@@ -192,7 +193,7 @@ bool ComputeHeikinAshi(const MqlRates rates[], int count, double &ha_open[], dou
 }
 
 // Intraday VWAP (anchored to day start in sessions timezone)
-bool ComputeVWAP(const MqlRates rates[], int count, double &vwap[])
+bool ComputeVWAP(const MqlRates &rates[], int count, double &vwap[])
 {
 	ArraySetAsSeries(vwap, true);
 	if(count <= 0) return(false);
@@ -272,7 +273,7 @@ bool HasConsecutiveWicklessRun(bool bearish, int lookback, const double &ha_open
 	return(false);
 }
 
-bool IsDoji(int i_candle, const MqlRates rates[], const double &ha_open[], const double &ha_close[], int prev_index_1, int prev_index_2)
+bool IsDoji(int i_candle, const MqlRates &rates[], const double &ha_open[], const double &ha_close[], int prev_index_1, int prev_index_2)
 {
 	double body = MathAbs(rates[i_candle].close - rates[i_candle].open);
 	double range = MathMax(rates[i_candle].high - rates[i_candle].low, g_point);
@@ -307,8 +308,19 @@ double CalculateRiskLotByStopUSD(double stop_distance_points)
 	double price = (g_tick.bid + g_tick.ask) * 0.5;
 	double stop_price_move = stop_distance_points * g_point;
 	double profit_1lot = 0.0;
-	OrderCalcProfit(ORDER_TYPE_SELL, g_symbol, 1.0, price, price - stop_price_move, profit_1lot);
-	double perLotPerPointUSD = MathMax(MathAbs(profit_1lot) / MathMax(stop_distance_points, 1.0), 0.0000001);
+	bool ok_profit = OrderCalcProfit(ORDER_TYPE_SELL, g_symbol, 1.0, price, price - stop_price_move, profit_1lot);
+	// per point value for 1 lot
+	double perLotPerPointUSD;
+	if(ok_profit)
+		perLotPerPointUSD = MathMax(MathAbs(profit_1lot) / MathMax(stop_distance_points, 1.0), 0.0000001);
+	else
+	{
+		double tick_value = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_VALUE);
+		double tick_size  = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_SIZE);
+		// value per price point (point == g_point)
+		perLotPerPointUSD = (tick_size > 0.0 ? tick_value * (g_point / tick_size) : 0.0);
+		if(perLotPerPointUSD <= 0.0) perLotPerPointUSD = 0.01;
+	}
 	double lot = risk_usd / (perLotPerPointUSD * stop_distance_points);
 	return(MathMax(NormalizeDouble(lot, 2), InpFixedLot));
 }
@@ -349,7 +361,6 @@ void ManageOpenPosition()
 	double sl   = PositionGetDouble(POSITION_SL);
 	double tp   = PositionGetDouble(POSITION_TP);
 	double profit = PositionGetDouble(POSITION_PROFIT);
-	ulong ticket = (ulong)PositionGetInteger(POSITION_TICKET);
 	bool is_buy = (type == POSITION_TYPE_BUY);
 	// Partial TP at 1R
 	if(InpEnablePartialTP && vol > SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN))
@@ -365,13 +376,13 @@ void ManageOpenPosition()
 				double new_vol = MathMax(SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN), NormalizeDouble(vol * 0.5, 2));
 				if(new_vol < vol)
 				{
-					Trade.PositionClosePartial(ticket, vol - new_vol);
+					Trade.PositionClosePartial(g_symbol, vol - new_vol);
 				}
 				// Optionally move SL to breakeven and start trailing
 				if(InpEnableTrailingAfterPTP)
 				{
 					double new_sl = is_buy ? MathMax(sl, g_tick.bid - curr_atr * InpATRMultiplier) : MathMin(sl, g_tick.ask + curr_atr * InpATRMultiplier);
-					Trade.PositionModify(ticket, new_sl, tp);
+					Trade.PositionModify(g_symbol, new_sl, tp);
 				}
 			}
 		}
@@ -381,9 +392,9 @@ void ManageOpenPosition()
 	{
 		double trail_sl = is_buy ? (g_tick.bid - curr_atr * InpATRMultiplier) : (g_tick.ask + curr_atr * InpATRMultiplier);
 		if(is_buy && trail_sl > sl)
-			Trade.PositionModify(ticket, trail_sl, tp);
+			Trade.PositionModify(g_symbol, trail_sl, tp);
 		else if(!is_buy && trail_sl < sl)
-			Trade.PositionModify(ticket, trail_sl, tp);
+			Trade.PositionModify(g_symbol, trail_sl, tp);
 	}
 }
 
