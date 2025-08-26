@@ -368,19 +368,19 @@ void DrawEntryAndLevels(bool is_buy, double price, double sl, double tp)
 	if(!InpVisualAnnotations) return;
 	// Arrow
 	string nameA = UniqueId(is_buy ? "BUY" : "SELL");
-	int arrowType = is_buy ? OBJ_ARROW_UP : OBJ_ARROW_DOWN;
+	ENUM_OBJECT arrowType = is_buy ? OBJ_ARROW_UP : OBJ_ARROW_DOWN;
 	ObjectCreate(0, nameA, arrowType, 0, iTime(g_symbol, InpTimeframe, 0), price);
 	ObjectSetInteger(0, nameA, OBJPROP_COLOR, is_buy ? InpBuyColor : InpSellColor);
 	ObjectSetInteger(0, nameA, OBJPROP_WIDTH, 2);
 	// SL line
 	string nameSL = UniqueId("SL");
-	ObjectCreate(0, nameSL, OBJ_HLINE, 0, 0, sl);
+	ObjectCreate(0, nameSL, OBJ_HLINE, 0, (datetime)0, sl);
 	ObjectSetInteger(0, nameSL, OBJPROP_COLOR, InpSLColor);
 	ObjectSetInteger(0, nameSL, OBJPROP_STYLE, STYLE_DASH);
 	ObjectSetInteger(0, nameSL, OBJPROP_WIDTH, 1);
 	// TP line
 	string nameTP = UniqueId("TP");
-	ObjectCreate(0, nameTP, OBJ_HLINE, 0, 0, tp);
+	ObjectCreate(0, nameTP, OBJ_HLINE, 0, (datetime)0, tp);
 	ObjectSetInteger(0, nameTP, OBJPROP_COLOR, InpTPColor);
 	ObjectSetInteger(0, nameTP, OBJPROP_STYLE, STYLE_DOT);
 	ObjectSetInteger(0, nameTP, OBJPROP_WIDTH, 1);
@@ -412,7 +412,7 @@ void DrawWicklessMarkers(const MqlRates &rates[], int bars, const double &ha_ope
 		bool bear = (ha_close[k] < ha_open[k]) && MathAbs(ha_high[k] - MathMax(ha_open[k], ha_close[k])) <= (g_point * 0.1);
 		if(bull)
 		{
-			name = StringFormat("WL_BULL_%I64d", (long long)t);
+			name = "WL_BULL_" + LongToString((long)t);
 			if(ObjectFind(0, name) == -1)
 			{
 				ObjectCreate(0, name, OBJ_ARROW_UP, 0, t, y);
@@ -422,7 +422,7 @@ void DrawWicklessMarkers(const MqlRates &rates[], int bars, const double &ha_ope
 		}
 		else if(bear)
 		{
-			name = StringFormat("WL_BEAR_%I64d", (long long)t);
+			name = "WL_BEAR_" + LongToString((long)t);
 			if(ObjectFind(0, name) == -1)
 			{
 				ObjectCreate(0, name, OBJ_ARROW_DOWN, 0, t, y);
